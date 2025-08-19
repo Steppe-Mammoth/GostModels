@@ -1,0 +1,4 @@
+dist/
+gostmodels.egg-info/
+__pycache__/
+venv/
