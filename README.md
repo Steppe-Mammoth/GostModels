@@ -13,6 +13,14 @@ This combines the best of `BaseModel.model_validate` (structured/nested models) 
 
 ---
 
+## Install
+```bash
+pip install gostmodels
+```
+https://pypi.org/project/gostmodels/
+
+---
+
 ## Why not just BaseModel?
 
 - `BaseModel.model_validate(...)`
