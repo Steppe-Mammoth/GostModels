@@ -50,7 +50,6 @@ class User(ElasticModel):
     first_name: Annotated[str, Field(min_length=2)]
     last_name: str
     email: EmailStr
-    phone: str
     created: Created
     updated: Created
 
@@ -65,7 +64,6 @@ doc = {
     "first_name": "Ann",
     "last_name": "Lee",
     "email": "ann@example.com",
-    "phone": "+12",
     "created": {
         "at": "2025-08-15"
         # "by": missing 
@@ -81,43 +79,37 @@ u = User.elastic_create(doc)
 
 # Alias works; unknown keys preserved without validation
 assert u.id == "u1"
-
 # .extra is a simple dict
 print(u.extra)  # -> {'external_value': 1}
 
 
 # Nested model is constructed, so methods on nested instances are available
 # Model methods can operate with currently loaded data
-print(u.created.datetime_from_at()) # -> "2025-08-15 00:00:00"  (type <class 'datetime.datetime')
-print(u.welcome())                  # -> "Hi Ann Lee! Joined at 2025-08-15 00:00:00"
+print(u.created.datetime_from_at()) # ✅ -> "2025-08-15 00:00:00"  (type <class 'datetime.datetime')
+print(u.welcome())                  # ✅ -> "Hi Ann Lee! Joined at 2025-08-15 00:00:00"
 
 
 # Accessing a declared but not loaded field → NotLoadedFieldError
-try:
-    _ = u.created.by
-except NotLoadedFieldError:
-    # .is_loaded(key) - Safe verification of field presence in the model
-    assert u.created.is_loaded("by") == False
-    # Mark fields as loaded by assigning to them
-    u.created.by = "system"
-    assert u.created.is_loaded("by") == True
-    
-    print("Yeah 😎")   # -> "Yeah 😎"
+print(u.created.by)         # ❌ -> ERROR NotLoadedFieldError
+
+# .is_loaded(key) - Safe verification of field presence in the model
+assert u.created.is_loaded("by") == False
+u.created.by = "system"  # Mark fields as loaded by assigning to them
+assert u.created.is_loaded("by") == True
 
 
 # Choose validation depth when you need it
 # shallow (recursive=False): do not descend into nested models
 ok_shallow, bad_paths = u.is_valid(recursive=False)
-print(ok_shallow, bad_paths)    # -> True, []
+print(ok_shallow, bad_paths)    # ✅ -> True, []
 # deep (recursive=True): checks nested models and finds missing required field in "updated"
 ok_deep, bad_paths = u.is_valid(recursive=True)
-print(ok_deep, bad_paths)       # -> False, ['updated.by']
+print(ok_deep, bad_paths)       # ⚠️ -> False, ['updated.by']
 
 
-# Before making the pydantic model, we fill in the missing field to avoid getting a ValidationError
-u.updated.by = "user"
 # Produce a fully validated pydantic.BaseModel instance (or raise ValidationError)
-validated = u.get_validated_model(recursive=True)   # pydantic.BaseModel
+u.updated.by = "user"  # Before making the pydantic model, we fill in the missing field to avoid getting a ValidationError
+validated = u.get_validated_model(recursive=True)   # ✅ -> pydantic.BaseModel
 ```
 
 ---
@@ -129,13 +121,13 @@ from datetime import datetime
 from pydantic import BaseModel, EmailStr, ValidationError
 from gostmodels import ElasticModel
 
-# Порівняємо способи створення об'єктів різними підходами:
+# Compare the methods of creating objects using different approaches:
 # 1. pydantic.BaseModel.model_validate
 # 2. pydantic.BaseModel.model_construct
 # 3. gostmodels.ElasticModel.elastic_create
 
-# Створимо ідентичні моделі BaseModel та ElasticModel
-# pydantic.BaseModel
+# Let's create identical BaseModel and ElasticModel model:
+# - pydantic.BaseModel
 # -------------------------------
 class CreatedPydantic(BaseModel):
     at: str
@@ -147,7 +139,7 @@ class UserPydantic(BaseModel):
     email: EmailStr
     created: CreatedPydantic
 # -------------------------------
-# gostmodels.ElasticModel
+# - gostmodels.ElasticModel
 # -------------------------------
 class CreatedElastic(ElasticModel):
     at: str
@@ -160,7 +152,7 @@ class UserElastic(ElasticModel):
     created: CreatedElastic
 # -------------------------------
 
-# Однаково обмежені дані, але їх цілком вистачить для потрібних нам маніпуляцій
+# Equally limited data, but enough for the actions we need
 partial_data = {
     "email": "a@b.com",
     "created": {
@@ -170,12 +162,12 @@ partial_data = {
     }
 
 # 1. pydantic.model_validate → raises immediately                       
-user_validate = UserPydantic.model_validate(partial_data)       # ❌ -> ERROR ValidationError:     1 validation error for UserPydantic
+user_validate = UserPydantic.model_validate(partial_data)       # ❌ -> ERROR ValidationError: 1 validation error for UserPydantic
 
 # 2. pydantic.model_construct → does not validate, but keeps nested dicts
 user_construct = UserPydantic.model_construct(**partial_data)   # ✅
 assert isinstance(user_construct.created, dict)                 # ⚠️ -> raw dict; methods relying on CreatedPydantic would break
-print(user_construct.created.datetime_from_at())                # ❌ -> ERROR AttributeError:       'dict' object has no attribute 'datetime_from_at
+print(user_construct.created.datetime_from_at())                # ❌ -> ERROR AttributeError: 'dict' object has no attribute 'datetime_from_at
 
 # 3. ElasticModel.elastic_create → no instant failures, and nested models are created
 user_elastic = UserElastic.elastic_create(partial_data)         # ✅
