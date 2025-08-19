@@ -1,13 +1,13 @@
-# Покривають:
-# - partial-створення з проєкцій
-# - строгий доступ до незавантажених полів (NotLoadedFieldError)
-# - рекурсію для вкладених моделей
-# - extra-поля
+# Cover / Покривають:
+# - partial-creation from projections / partial-створення з проєкцій
+# - strict access to unloaded fields (NotLoadedFieldError) / строгий доступ до незавантажених полів (NotLoadedFieldError)
+# - recursion for nested models / рекурсію для вкладених моделей
+# - extra-fields / extra-поля
 # - alias
-# - shallow vs deep валідацію (is_valid / get_validated_model)
-# - колекції (list/set/tuple), dict-ключі, Union (дискримінований)
+# - shallow vs deep validation (is_valid / get_validated_model) / shallow vs deep валідацію (is_valid / get_validated_model)
+# - collections (list/set/tuple), dict-keys, Union (discriminated) / колекції (list/set/tuple), dict-ключі, Union (дискримінований)
 # - Annotated-constraints
-# - оновлення _loaded_fields при ручному присвоєнні (__setattr__)
+# - updating _loaded_fields on manual assignment (__setattr__) / оновлення _loaded_fields при ручному присвоєнні (__setattr__)
 
 
 import pytest
@@ -18,7 +18,7 @@ from pydantic import EmailStr, Field, ValidationError
 from gostmodels import ElasticModel, NotLoadedFieldError
 
 # --------------------------
-# Моделі для тестів
+# Models for tests
 # --------------------------
 
 class Created(ElasticModel):
@@ -40,10 +40,10 @@ class User(ElasticModel):
     phone: str
     created: Created
     password: Password
-    # Дефолтне поле: важливо перевірити строгий доступ (має кидати, якщо не завантажене)
+    # Default field: important to check strict access (should throw if not loaded)
     flag: bool = False
 
-    # Для списків/масивів користувачів (для перевірки шляхів типу members[0].email)
+    # For user lists/arrays (to check paths like members[0].email)
 class UserSlim(ElasticModel):
     email: EmailStr
     created: Created
