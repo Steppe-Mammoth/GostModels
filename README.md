@@ -45,11 +45,9 @@ from pydantic import Field, EmailStr
 
 from gostmodels import ElasticModel, NotLoadedFieldError
 
-
 class Created(ElasticModel):
     at: str
     by: str
-
     def datetime_from_at(self) -> datetime:
         return datetime.strptime(self.at, "%Y-%m-%d")
 
@@ -60,17 +58,15 @@ class User(ElasticModel):
     email: EmailStr
     created: Created
     updated: Created
-
-    # A method that works with the subset we will actually load
+    
     def welcome(self) -> str:
         # Uses only fields present in the example payload below
-        return f"Hi {self.first_name} {self.last_name}! Joined at {self.created.datetime_from_at()}"
+        return f"Hi {self.first_name}! Joined at {self.created.datetime_from_at()}"
 
 # Build from a projection (partial dict)
 doc = {
     "_id": "u1",
     "first_name": "Ann",
-    "last_name": "Lee",
     "email": "ann@example.com",
     "created": {
         "at": "2025-08-15"
@@ -83,22 +79,20 @@ doc = {
     "external_value": 1,   # unknown key → goes to .extra
 }
 
-u = User.elastic_create(doc)
+u = User.elastic_create(doc)      # ✅ -> ElasticModel
+assert u.id == "u1"   # Alias works; unknown keys preserved without validation
 
-# Alias works; unknown keys preserved without validation
-assert u.id == "u1"
-# .extra is a simple dict
-print(u.extra)  # -> {'external_value': 1}
-
+# 💡 .extra is a simple dict that stores all unknown field models 💡
+print(u.extra)        # ✅ -> {'external_value': 1}
 
 # Nested model is constructed, so methods on nested instances are available
 # Model methods can operate with currently loaded data
 print(u.created.datetime_from_at()) # ✅ -> "2025-08-15 00:00:00"  (type <class 'datetime.datetime')
 print(u.welcome())                  # ✅ -> "Hi Ann Lee! Joined at 2025-08-15 00:00:00"
 
-
 # Accessing a declared but not loaded field → NotLoadedFieldError
-print(u.created.by)         # ❌ -> ERROR NotLoadedFieldError
+print(u.created.by)     # ❌ -> ERROR NotLoadedFieldError
+
 
 # .is_loaded(key) - Safe verification of field presence in the model
 assert u.created.is_loaded("by") == False
@@ -110,6 +104,7 @@ assert u.created.is_loaded("by") == True
 # shallow (recursive=False): do not descend into nested models
 ok_shallow, bad_paths = u.is_valid(recursive=False)
 print(ok_shallow, bad_paths)    # ✅ -> True, []
+
 # deep (recursive=True): checks nested models and finds missing required field in "updated"
 ok_deep, bad_paths = u.is_valid(recursive=True)
 print(ok_deep, bad_paths)       # ⚠️ -> False, ['updated.by']
