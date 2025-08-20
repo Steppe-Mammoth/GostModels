@@ -49,21 +49,6 @@ https://pypi.org/project/gostmodels/
 
 ---
 
-## Why not just BaseModel?
-
-- `BaseModel.model_validate(...)`
-  - Pros: validates and builds the full nested object graph
-  - Cons: fails immediately if required fields are missing (cannot hold partial payloads)
-
-- `BaseModel.model_construct(...)`
-  - Pros: creates an instance without validation (can hold partial payloads)
-  - Cons: does not build nested models from dicts — nested values remain raw dicts, so model methods/properties that rely on nested models can break
-
-- `ElasticModel.elastic_create(...)`
-  - Pros: accepts partial payloads while still building nested `ElasticModel`s; strict read access guards missing fields; unknown keys available in `.extra`; choose deep or shallow validation later
-
----
-
 ## Quick start
 
 ```python
@@ -106,20 +91,21 @@ doc = {
     },
     "external_value": 1,   # unknown key → goes to .extra
 }
-
-u = User.elastic_create(doc)      # ✅ -> ElasticModel
+# --------MAIN CONSTRUCTOR-------
+u = User.elastic_create(doc)        # ✅ -> ElasticModel
+# -------------------------------
 assert u.id == "u1"   # Alias works; unknown keys preserved without validation
 
 # 💡 .extra is a simple dict that stores all unknown field models 💡
-print(u.extra)        # ✅ -> {'external_value': 1}
+print(u.extra)                      # ✅ -> {'external_value': 1}
 
-# Nested model is constructed, so methods on nested instances are available
+# 💡 Nested model is constructed, so methods on nested instances are available
 # Model methods can operate with currently loaded data
 print(u.created.datetime_from_at()) # ✅ -> "2025-08-15 00:00:00"  (type <class 'datetime.datetime')
 print(u.welcome())                  # ✅ -> "Hi Ann Lee! Joined at 2025-08-15 00:00:00"
 
-# Accessing a declared but not loaded field → NotLoadedFieldError
-print(u.created.by)     # ❌ -> ERROR NotLoadedFieldError
+# 💡 Accessing a declared but not loaded field → NotLoadedFieldError
+print(u.created.by)                 # ❌ -> ERROR NotLoadedFieldError
 
 
 # .is_loaded(key) - Safe verification of field presence in the model
@@ -128,7 +114,7 @@ u.created.by = "system"  # Mark fields as loaded by assigning to them
 assert u.created.is_loaded("by") == True
 
 
-# Choose validation depth when you need it
+# 💡 Choose validation depth when you need it
 # shallow (recursive=False): do not descend into nested models
 ok_shallow, bad_paths = u.is_valid(recursive=False)
 print(ok_shallow, bad_paths)    # ✅ -> True, []
@@ -145,7 +131,7 @@ validated = u.get_validated_model(recursive=True)   # ✅ -> pydantic.BaseModel
 
 ---
 
-## Comparing to BaseModel.model_validate and model_construct
+## Comparing .create_elastic to .model_validate and .model_construct from pydantic
 
 ```python
 from datetime import datetime
