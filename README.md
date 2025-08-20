@@ -1,16 +1,44 @@
 ## ElasticModel
 
-A focused wrapper around pydantic v2 `BaseModel` for working with partial (projection) documents from databases and APIs.
+ElasticModel is a wrapper around `pydantic.BaseModel`(v2) designed to simplify working with partial (projected) data from databases or APIs.
 
-ElasticModel enables you to:
-- Build instances from incomplete data without making every field optional
-- Access only what’s loaded; reading a missing field raises `NotLoadedFieldError`
-- Preserve unknown keys in `model.extra` (no validation)
-- Recursively build nested `ElasticModel`s from dicts
-- Validate shallowly or deeply on demand
+**The key advantage is support for nested models ("model within a model") without requiring all fields to be loaded. Despite this, model methods remain accessible at every level and operate on the data that has been loaded.**
 
-This combines the best of `BaseModel.model_validate` (structured/nested models) and `BaseModel.model_construct` (no immediate validation), while adding strict read semantics for missing fields.
+⚠️*This behavior wouldn't be possible with Pydantic, which requires all fields to be present.*
 
+**Core features of ElasticModel:**
+- ✅ Fully inherits the behavior of `pydantic.BaseModel`: all methods and functionality. Just replace `BaseModel` with `ElasticModel`.
+- ✅ Allows creating models from incomplete data and provides full access — read fields, call methods, even on nested models.
+- ✅ Avoids the need for declaring a bunch of `Optional` fields.
+- ✅ Supports dynamic (undeclared) fields — stored in `self.extra`, a dictionary for unprocessed data.
+- ✅ Ensures strict access: only loaded fields can be accessed. Trying to access an unloaded field will raise `NotLoadedFieldError`.
+- ✅ Supports recursive creation of nested models.
+- ✅ Provides shallow or deep checks for required fields at any time (on demand).
+
+ElasticModel combines the best of `BaseModel.model_validate` (structured/nested models) and `BaseModel.model_construct` (creation without validation), adding new flexibility for working with partial data — without overloading your codebase with `Optional` fields.
+
+---
+<details>
+<summary>🌐Переклад тут🔱 ElasticModel — це `pydantic.BaseModel`(v2), який надає ... та спрощує...</summary>
+... спрощує роботу з частковими (проекційними) даними з баз даних або API.
+
+
+**Основна перевага — підтримка вкладених моделей ("модель у моделі") без необхідності завантаження всіх полів. Незважаючи на це, методи моделі залишаються доступними на всіх рівнях і працюють із тими даними, які були завантажені.**
+
+⚠️*У Pydantic така поведінка була б неможливою, оскільки він вимагає наявності всіх полів*.
+
+Основні можливості ElasticModel:
+- ✅ Повністю наслідує поведінку `pydantic.BaseModel`: усі методи та функціональність. Просто заміни `BaseModel` на `ElasticModel`.
+- ✅ Дозволяє створювати моделі з неповними даними й отримувати повний доступ — читати поля, викликати методи, навіть на вкладених моделях.
+- ✅ Не потребує великої кількості полів типу `Optional`.
+- ✅ Підтримує динамічні (неописані) поля — вони зберігаються в `self.extra`, словнику для необроблених даних.
+- ✅ Гарантує контроль доступу: можна звертатись лише до завантажених полів. Спроба доступу до незавантаженого поля викличе `NotLoadedFieldError`.
+- ✅ Підтримує рекурсивне створення вкладених моделей.
+- ✅ Дозволяє виконувати поверхневу або глибоку перевірку обов’язкових полів у будь-який момент (на вимогу користувача).
+
+ElasticModel поєднує найкраще з `BaseModel.model_validate` (структуровані/вкладені моделі) та `BaseModel.model_construct` (створення без валідації), додаючи нову гнучкість у роботі з частковими даними — без перевантаження кодової бази полями `Optional`.
+
+</details>
 ---
 
 ## Install
