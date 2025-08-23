@@ -283,13 +283,13 @@ class ElasticModel(BaseModel):
         return inst
 
     @property
-    def extra(self) -> dict[str, Any]:
+    def elastic_extra(self) -> dict[str, Any]:
         """
         All unknown model fields are stored here (without validation).
         """
         return self._extra
 
-    def is_loaded(self, name: str) -> bool:
+    def elastic_is_loaded(self, name: str) -> bool:
         """
         Checks whether the field was set during `elastic_create`.
         """
@@ -304,7 +304,7 @@ class ElasticModel(BaseModel):
         
         return name in loaded
     
-    def is_valid(self, *, recursive: bool = True) -> tuple[bool, list[str]]:
+    def elastic_is_valid(self, *, recursive: bool = True) -> tuple[bool, list[str]]:
         """
         Checks validity without returning a new instance.
         Returns (True/False, bad_paths: List[str]), where bad_paths — 'a.b[2].c' etc.
@@ -331,7 +331,7 @@ class ElasticModel(BaseModel):
                 paths.append(".".join(parts))
             return False, paths
 
-    def get_validated_model(self, recursive: bool = True) -> Self:
+    def elastic_get_validated_model(self, recursive: bool = True) -> Self:
         """
         Full validation of current model state:
         - If validation is successful - returns a new class instance
@@ -342,8 +342,7 @@ class ElasticModel(BaseModel):
         payload = _build_validation_payload(model=self, recursive=recursive)
         return self.__class__.model_validate(payload)
 
-
-    def get_model_fields(self) -> Mapping[str, FieldInfo]:
+    def elastic_get_model_fields(self) -> Mapping[str, FieldInfo]:
         """
         (ChatGPT advises not to call this in system methods, possible crash accessing nested model fields, but this seems to be false)
         (ЧатГПТ радить не викликати це в системних методах, можливий збій доступа до полів вкладених моделей, але схоже це брехня)

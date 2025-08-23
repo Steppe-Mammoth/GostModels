@@ -132,9 +132,9 @@ def test_extra_fields_collected_in_extra():
         "debug_flag": 1,  # зайве поле
     }
     u = User.elastic_create(doc)
-    assert u.extra["debug_flag"] == 1
+    assert u.elastic_extra["debug_flag"] == 1
     # .extra не впливає на схему
-    model_fields = u.get_model_fields()
+    model_fields = u.elastic_get_model_fields()
     assert "debug_flag" not in model_fields
 
 
@@ -170,7 +170,7 @@ def test_apply_defaults_top_level():
     u = User.elastic_create(doc, apply_defaults=True)
     assert u.flag is False
     # is_loaded має сказати, що цей дефолт тепер «завантажений»
-    assert u.is_loaded("flag") is True
+    assert u.elastic_is_loaded("flag") is True
 
 
 def test_nested_model_partial_and_strict_access():
@@ -202,12 +202,12 @@ def test_is_valid_shallow_vs_deep_paths():
         "created": {"at": "t"},  # немає 'by'
     })
 
-    ok_deep, bad_deep = u.is_valid(recursive=True)
+    ok_deep, bad_deep = u.elastic_is_valid(recursive=True)
     assert ok_deep is False
     # 'created.by' має бути серед шляхів помилок
     assert any(p == "created.by" for p in bad_deep)
 
-    ok_shallow, bad_shallow = u.is_valid(recursive=False)
+    ok_shallow, bad_shallow = u.elastic_is_valid(recursive=False)
     # shallow не перевіряє вкладені інстанси → має не падати по created.by
     assert ok_shallow is True
     assert all(p != "created.by" for p in bad_shallow)
@@ -224,12 +224,12 @@ def test_get_validated_model_shallow_and_deep():
     })
 
     # Shallow: працює (вкладений інстанс приймається «як є»)
-    u_shallow = u.get_validated_model(recursive=False)
+    u_shallow = u.elastic_get_validated_model(recursive=False)
     assert isinstance(u_shallow, UserSlim)
 
     # Deep: має впасти
     with pytest.raises(ValidationError):
-        _ = u.get_validated_model(recursive=True)
+        _ = u.elastic_get_validated_model(recursive=True)
 
 
 def test_dict_key_and_value_coercion_validate_true_and_false():
@@ -365,7 +365,7 @@ def test_manual_assignment_marks_loaded_and_allows_access():
 
     # Ручне присвоєння → має стати «loaded»
     u.email = "x@y.z"
-    assert u.is_loaded("email") is True
+    assert u.elastic_is_loaded("email") is True
     assert u.email == "x@y.z"
 
 
@@ -381,10 +381,10 @@ def test_group_members_paths_in_deep_validation():
         ]
     })
 
-    ok_shallow, bad_shallow = g.is_valid(recursive=False)
+    ok_shallow, bad_shallow = g.elastic_is_valid(recursive=False)
     assert ok_shallow is True  # shallow не лізе у вкладених інстансах
 
-    ok_deep, bad_deep = g.is_valid(recursive=True)
+    ok_deep, bad_deep = g.elastic_is_valid(recursive=True)
     assert ok_deep is False
     assert "members[1].created.by" in bad_deep
 
@@ -425,9 +425,9 @@ def test_basemodel_partial_creation_vs_elasticmodel():
 
     # ElasticModel — допускає частковість
     u = UserSlim.elastic_create(partial_doc)
-    ok_shallow, bad_shallow = u.is_valid(recursive=False)
+    ok_shallow, bad_shallow = u.elastic_is_valid(recursive=False)
     assert ok_shallow is True
-    ok_deep, bad_deep = u.is_valid(recursive=True)
+    ok_deep, bad_deep = u.elastic_is_valid(recursive=True)
     assert ok_deep is False and "created.by" in bad_deep
 
 
@@ -450,7 +450,7 @@ def test_basemodel_extra_ignored_vs_elasticmodel_extra_captured():
         email: EmailStr
 
     eu = EMUser.elastic_create(doc)
-    assert eu.extra["debug_flag"] == 1
+    assert eu.elastic_extra["debug_flag"] == 1
 
 
 def test_basemodel_deep_validation_always_vs_elasticmodel_shallow():
@@ -466,7 +466,7 @@ def test_basemodel_deep_validation_always_vs_elasticmodel_shallow():
 
     # ElasticModel — shallow проходить, deep падає
     u = UserSlim.elastic_create(partial_doc)
-    u_shallow = u.get_validated_model(recursive=False)
+    u_shallow = u.elastic_get_validated_model(recursive=False)
     assert isinstance(u_shallow, UserSlim)
     with pytest.raises(ValidationError):
-        _ = u.get_validated_model(recursive=True)
+        _ = u.elastic_get_validated_model(recursive=True)

@@ -10,7 +10,7 @@ ElasticModel is a wrapper around `pydantic.BaseModel`(v2) designed to simplify w
 - ✅ Fully inherits the behavior of `pydantic.BaseModel`: all methods and functionality. Just replace `BaseModel` with `ElasticModel`.
 - ✅ Allows creating models from incomplete data and provides full access — read fields, call methods, even on nested models.
 - ✅ Avoids the need for declaring a bunch of `Optional` fields.
-- ✅ Supports dynamic (undeclared) fields — stored in `self.extra`, a dictionary for unprocessed data.
+- ✅ Supports dynamic (undeclared) fields — stored in `self.elastic_extra`, a dictionary for unprocessed data.
 - ✅ Ensures strict access: only loaded fields can be accessed. Trying to access an unloaded field will raise `NotLoadedFieldError`.
 - ✅ Supports recursive creation of nested models.
 - ✅ Provides shallow or deep checks for required fields at any time (on demand).
@@ -31,7 +31,7 @@ ElasticModel combines the best of `BaseModel.model_validate` (structured/nested 
 - ✅ Повністю наслідує поведінку `pydantic.BaseModel`: усі методи та функціональність. Просто заміни `BaseModel` на `ElasticModel`.
 - ✅ Дозволяє створювати моделі з неповними даними й отримувати повний доступ — читати поля, викликати методи, навіть на вкладених моделях.
 - ✅ Не потребує великої кількості полів типу `Optional`.
-- ✅ Підтримує динамічні (неописані) поля — вони зберігаються в `self.extra`, словнику для необроблених даних.
+- ✅ Підтримує динамічні (неописані) поля — вони зберігаються в `self.elastic_extra`, словнику для необроблених даних.
 - ✅ Гарантує контроль доступу: можна звертатись лише до завантажених полів. Спроба доступу до незавантаженого поля викличе `NotLoadedFieldError`.
 - ✅ Підтримує рекурсивне створення вкладених моделей.
 - ✅ Дозволяє виконувати поверхневу або глибоку перевірку обов’язкових полів у будь-який момент (на вимогу користувача).
@@ -96,8 +96,8 @@ u = User.elastic_create(doc)        # ✅ -> ElasticModel
 # -------------------------------
 assert u.id == "u1"   # Alias works; unknown keys preserved without validation
 
-# 💡 .extra is a simple dict that stores all unknown field models 💡
-print(u.extra)                      # ✅ -> {'external_value': 1}
+# 💡 .elastic_extra is a simple dict that stores all unknown field models 💡
+print(u.elastic_extra)                      # ✅ -> {'external_value': 1}
 
 # 💡 Nested model is constructed, so methods on nested instances are available
 # Model methods can operate with currently loaded data
@@ -109,29 +109,29 @@ print(u.created.by)                 # ❌ -> ERROR NotLoadedFieldError
 
 
 # .is_loaded(key) - Safe verification of field presence in the model
-assert u.created.is_loaded("by") == False
+assert u.created.elastic_is_loaded("by") == False
 u.created.by = "system"  # Mark fields as loaded by assigning to them
-assert u.created.is_loaded("by") == True
+assert u.created.elastic_is_loaded("by") == True
 
 
 # 💡 Choose validation depth when you need it
 # shallow (recursive=False): do not descend into nested models
-ok_shallow, bad_paths = u.is_valid(recursive=False)
+ok_shallow, bad_paths = u.elastic_is_valid(recursive=False)
 print(ok_shallow, bad_paths)    # ✅ -> True, []
 
 # deep (recursive=True): checks nested models and finds missing required field in "updated"
-ok_deep, bad_paths = u.is_valid(recursive=True)
+ok_deep, bad_paths = u.elastic_is_valid(recursive=True)
 print(ok_deep, bad_paths)       # ⚠️ -> False, ['updated.by']
 
 
 # Produce a fully validated pydantic.BaseModel instance (or raise ValidationError)
 u.updated.by = "user"  # Before making the pydantic model, we fill in the missing field to avoid getting a ValidationError
-validated = u.get_validated_model(recursive=True)   # ✅ -> pydantic.BaseModel
+validated = u.elastic_get_validated_model(recursive=True)   # ✅ -> pydantic.BaseModel
 ```
 
 ---
 
-## Comparing .create_elastic to .model_validate and .model_construct from pydantic
+## Comparing .elastic_create to .model_validate and .model_construct from pydantic
 
 ```python
 from datetime import datetime
@@ -226,10 +226,10 @@ Summary:
 ## API snapshot
 
 - `ElasticModel.elastic_create(data: dict, *, validate: bool = True, apply_defaults: bool = False) -> Self`
-- `model.extra -> dict[str, any]`
-- `model.is_loaded(name: str) -> bool`
-- `model.is_valid(*, recursive: bool = True) -> tuple[bool, list[str]]`
-- `model.get_validated_model(recursive: bool = True) -> Self`
+- `model.elastic_extra -> dict[str, any]`
+- `model.elastic_is_loaded(name: str) -> bool`
+- `model.elastic_is_valid(*, recursive: bool = True) -> tuple[bool, list[str]]`
+- `model.elastic_get_validated_model(recursive: bool = True) -> Self`
 - Assignment marks fields as loaded: `model.field = value`
 
 ---
