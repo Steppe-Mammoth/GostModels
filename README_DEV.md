@@ -22,6 +22,9 @@
 1. Переконайтесь, що файл `pyproject.toml` знаходиться у корені проєкту.
 2. Виконайте команду:
    ```bash
+   # delete old dist
+   rm dist/*
+
    # pip install build
    python -m build
    ```
@@ -35,7 +38,7 @@
 2. Завантажте пакет на PyPI:
    ```bash
    # pip install twine
-   twine upload dist/*
+   python -m twine upload dist/*
    ```
    Вас попросять ввести логін та пароль від PyPI.
 
