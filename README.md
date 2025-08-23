@@ -89,7 +89,7 @@ doc = {
         "at": "2099-01-10"
         # "by": missing 
     },
-    "external_value": 1,   # unknown key → goes to .extra
+    "external_value": 1,   # unknown key → goes to .elastic_extra
 }
 # --------MAIN CONSTRUCTOR-------
 u = User.elastic_create(doc)        # ✅ -> ElasticModel
@@ -204,7 +204,7 @@ Summary:
 - Partial construction: `elastic_create(data, validate=True, apply_defaults=False)`
   - Accepts dicts with missing and extra keys
   - Validates/coerces values via `TypeAdapter` using your type hints (including `Annotated[..., Field(...)]`)
-  - Unknown keys are captured in `model.extra`
+  - Unknown keys are captured in `model.elastic_extra`
   - Tracks actually loaded fields in `._loaded_fields`
   - `apply_defaults=True` applies `default`/`default_factory` to missing fields and marks them as loaded
 
