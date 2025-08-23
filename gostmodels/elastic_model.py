@@ -361,7 +361,7 @@ class ElasticModel(BaseModel):
             return object.__getattribute__(self, name)
 
         # Call NotLoadedFieldError if key is not loaded
-        _raise_if_not_loaded(self, name)
+        self._raise_if_not_loaded(model=self, name=name)
 
         # Normal access
         return object.__getattribute__(self, name)
@@ -373,7 +373,7 @@ class ElasticModel(BaseModel):
         """
         
         # Call NotLoadedFieldError if key is not loaded
-        _raise_if_not_loaded(self, name)
+        self._raise_if_not_loaded(self, name)
 
         raise AttributeError(name)
 
