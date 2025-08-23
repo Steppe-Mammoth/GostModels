@@ -237,6 +237,6 @@ Summary:
 ## Defaults and config
 
 ElasticModel sets these `pydantic.ConfigDict` defaults:
-- `extra='ignore'` — extra keys are ignored by Pydantic but manually collected into `.extra`
+- `extra='ignore'` — extra keys are ignored by Pydantic but manually collected into `.elastic_extra`
 - `populate_by_name=True` — supports both field names and aliases
 - `revalidate_instances='never'` — nested model instances are not revalidated automatically (important for shallow validation) 
