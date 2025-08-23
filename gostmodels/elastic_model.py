@@ -484,29 +484,29 @@ class ElasticModel(BaseModel):
         # Everything else (int/str/EmailStr/Decimal/datetime/Enum/AnyUrl/...) — delegate to TypeAdapter
         return _adapter(raw).validate_python(value) if validate else value
 
+    @classmethod
+    def _raise_if_not_loaded(cls, model: "ElasticModel", name: str) -> None:
+        """
+        Single source of truth: if `name` is a model field but not in `_loaded_fields` - raise NotLoadedFieldError.
+        Єдине місце правди: якщо `name` є полем моделі, але не в `_loaded_fields` - піднімаємо NotLoadedFieldError.
+        """
+        cls = object.__getattribute__(model, '__class__')
+        model_fields = cls.model_fields
+        if name not in model_fields:
+            return
+        
+        try:
+            loaded_fields = object.__getattribute__(model, '_loaded_fields')
+        except AttributeError:
+            # early initialization phase — just skip the check (test `test_discriminated_union_validate_true` - couldn't access nested fields of nested models)
+            # рання фаза ініціалізації — просто пропускаємо перевірку (тест `test_discriminated_union_validate_true` - не зміг звернутися до вкладених полів вкладених моделей)
+            logger.debug(
+                "ElasticModel: access to not-loaded field '%s' on model '%s'",
+                name, cls.__name__,
+            )
+            return
+        
+        if name in loaded_fields:
+            return
 
-def _raise_if_not_loaded(model: "ElasticModel", name: str) -> None:
-    """
-    Single source of truth: if `name` is a model field but not in `_loaded_fields` - raise NotLoadedFieldError.
-    Єдине місце правди: якщо `name` є полем моделі, але не в `_loaded_fields` - піднімаємо NotLoadedFieldError.
-    """
-    cls = object.__getattribute__(model, '__class__')
-    model_fields = cls.model_fields
-    if name not in model_fields:
-        return
-    
-    try:
-        loaded_fields = object.__getattribute__(model, '_loaded_fields')
-    except AttributeError:
-        # early initialization phase — just skip the check (test `test_discriminated_union_validate_true` - couldn't access nested fields of nested models)
-        # рання фаза ініціалізації — просто пропускаємо перевірку (тест `test_discriminated_union_validate_true` - не зміг звернутися до вкладених полів вкладених моделей)
-        logger.debug(
-            "ElasticModel: access to not-loaded field '%s' on model '%s'",
-            name, cls.__name__,
-        )
-        return
-    
-    if name in loaded_fields:
-        return
-
-    raise NotLoadedFieldError(f"Field '{name}' of model '{cls.__name__}' was not loaded.")
+        raise NotLoadedFieldError(f"Field '{name}' of model '{cls.__name__}' was not loaded.")
