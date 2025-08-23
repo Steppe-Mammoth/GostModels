@@ -37,12 +37,17 @@ logger = logging.getLogger(__name__)
 
 _SYSTEM_ATTRS = (
     'model_config',
+    'model_fields',
     '__dict__',
     '__class__',
     '__fields_set__',
     '__pydantic_fields_set__',
-    'is_loaded',
-    'get_model_fields'
+    # Публічні утиліти обгортки:
+    'elastic_is_loaded',
+    'elastic_get_model_fields',
+    'elastic_is_valid',
+    'elastic_get_validated_model',
+    'elastic_extra',
 )
 
 
