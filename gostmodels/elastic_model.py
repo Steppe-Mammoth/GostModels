@@ -161,14 +161,15 @@ def _build_validation_payload(model: ElasticModel, recursive: bool) -> dict[str,
         - Якщо `recursive=False` у полі випадково лежить dict (а не інстанс BaseModel), Pydantic обробить його як сирі дані та піде в глибину для цього поля.
         - Якщо `ConfigDict.revalidate_instances != 'never'`, то навіть інстанси вкладених моделей будуть перевалідовані.
     """
-    # Full serialization 
+
     if recursive:
+        # Full serialization 
         data = model.model_dump(exclude_unset=True)
         return data
-    # Shallow serialization 
-    # Take only actually loaded fields (or manually assigned via __setattr__)
-    # Беремо лише реально завантажені поля (або вручну присвоєні через __setattr__)
     else:
+        # Shallow serialization 
+        # Take only actually loaded fields (or manually assigned via __setattr__)
+        # Беремо лише реально завантажені поля (або вручну присвоєні через __setattr__)
         try:
             loaded_fields = object.__getattribute__(model, '_loaded_fields')
         except AttributeError:
@@ -314,6 +315,7 @@ class ElasticModel(BaseModel):
             _adapter(self.__class__).validate_python(payload)
             return True, []
         except ValidationError as e:
+            # create a list of invalid fields
             paths: list[str] = []
             for err in e.errors():
                 loc = err.get("loc", ())
