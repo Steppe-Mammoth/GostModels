@@ -2,18 +2,18 @@
 
 ElasticModel is a wrapper around `pydantic.BaseModel`(v2) designed to simplify working with partial (projected) data from databases or APIs.
 
-**The key advantage is support for nested models ("model within a model") without requiring all fields to be loaded. Despite this, model methods remain accessible at every level and operate on the data that has been loaded.**
+**Key advantage:** nested models (“model-in-model”) work even when not all required fields are loaded. Methods remain usable at any level and operate on the data that **is** loaded.
 
-⚠️*This behavior wouldn't be possible with Pydantic, which requires all fields to be present.*
+> Pydantic’s `model_validate()` requires all required fields. `model_construct()` allows partials but keeps nested dicts as raw dicts. ElasticModel combines the best of both.
 
 **Core features of ElasticModel:**
 - ✅ Fully inherits the behavior of `pydantic.BaseModel`: all methods and functionality. Just replace `BaseModel` with `ElasticModel`.
-- ✅ Allows creating models from incomplete data and provides full access — read fields, call methods, even on nested models.
+- ✅ Allows creating models from incomplete data, providing full access — read fields, call methods, even on nested models.
 - ✅ Avoids the need for declaring a bunch of `Optional` fields.
-- ✅ Supports dynamic (undeclared) fields — stored in `self.elastic_extra`, a dictionary for unprocessed data.
+- ✅ Supports dynamic unknown fields — stored in `self.elastic_extra`, a dictionary for unprocessed data.
 - ✅ Ensures strict access: only loaded fields can be accessed. Trying to access an unloaded field will raise `NotLoadedFieldError`.
 - ✅ Supports recursive creation of nested models.
-- ✅ Provides shallow or deep checks for required fields at any time (on demand).
+- ✅ Provides "shallow" or "deep" checks for required fields at any time (on demand).
 
 ElasticModel combines the best of `BaseModel.model_validate` (structured/nested models) and `BaseModel.model_construct` (creation without validation), adding new flexibility for working with partial data — without overloading your codebase with `Optional` fields.
 
