@@ -304,7 +304,7 @@ class ElasticModel(BaseModel):
         
         return name in loaded
     
-    def elastic_is_valid(self, *, recursive: bool = True) -> tuple[bool, list[str]]:
+    def elastic_is_valid(self, recursive: bool = True) -> tuple[bool, list[str]]:
         """
         Checks validity without returning a new instance.
         Returns (True/False, bad_paths: List[str]), where bad_paths — 'a.b[2].c' etc.
@@ -312,7 +312,8 @@ class ElasticModel(BaseModel):
         payload = _build_validation_payload(model=self, recursive=recursive)
         
         try:
-            _adapter(self.__class__).validate_python(payload)
+            # _adapter(self.__class__).validate_python(payload)
+            self.__class__.model_validate(payload)
             return True, []
         except ValidationError as e:
             # create a list of invalid fields
