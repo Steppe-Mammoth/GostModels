@@ -5,7 +5,7 @@ It allows you to create objects from truncated dicts, ignoring missing required 
 - will throw an error when accessing an unloaded field (NotLoadedFieldError);
 - validates existing values typically via TypeAdapter (email, datetime, enum, …);
 - recursively builds nested models (which also inherit ElasticModel);
-- puts extra keys in .extra (without validation);
+- puts extra keys in .elastic_extra (without validation);
 - supports two validation modes: deep and shallow.
 
 ElasticModel — базовий клас для роботи з частковими (проекційними) документами з бази даних.
@@ -26,7 +26,6 @@ from functools import lru_cache
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr, TypeAdapter, ValidationError
 from pydantic.fields import FieldInfo
-from pydantic_core import PydanticUndefined
 
 import logging
 logger = logging.getLogger(__name__)
@@ -49,16 +48,6 @@ _SYSTEM_ATTRS = (
     'elastic_get_validated_model',
     'elastic_extra',
 )
-
-
-class NotLoadedFieldError(AttributeError):
-    """
-    The code accesses a field that is described in the model, but has not been loaded.
-    The message prompts: add this field to the model before accessing it.
-    
-    Код звертається до поля, яке описано в моделі, але не було завантажене.
-    Повідомлення підказує: додайте це поле до моделі перед доступом до нього.
-    """
 
 
 def _issubclass_safe(tp: Any, base: type) -> bool:
@@ -139,58 +128,40 @@ def _strip_annot(annotation: Any) -> Any:
         return annotation
 
 
-def _build_validation_payload(model: ElasticModel, recursive: bool) -> dict[str, Any]:
+def _build_validation_payload(model: BaseModel, recursive: bool) -> dict[str, Any]:
     """
     Forms payload for validation via BaseModel.model_validate(...).
-    Формує payload для валідації через BaseModel.model_validate(...).
     
-    Parameters / Параметри:
+    Parameters:
     - recursive:
-        - If True - Full serialization: entire model and nested BaseModels are converted to dict/list/...
-        - If False - Shallow serialization. Nested models remain instances (not converted to dict)
-        - Якщо True - Повна серіалізація: вся модель і вкладені BaseModel перетворюються на dict/list/...
-        - Якщо False - Поверхнева серіалізація. Вкладені моделі залишаються інстансами (не перетворюються в dict)
+        - Якщо True - Повна серіалізація. pydantic створить, та провалідує всі рівні
+        - Якщо False - Поверхнева серіалізація. Вкладені моделі залишаються інстансами, pydantic інстани залишає як є
 
-    Why shallow serialization is needed (`recursive == False`):
-        - If you call BaseModel.model_validate and pass dict - full validation will be performed with nested model formation
-        - If you call BaseModel.model_validate and pass dict which contains nested model instances - these models won't be recreated and validated, but will remain as is
-            - Note. Only if ConfigDict.revalidate_instances == 'never' (default)
-        
-        - Якщо викликати BaseModel.model_validate і передавати dict - буде виконана повна валідація з формуванням вкладених моделей
-        - Якщо викликати BaseModel.model_validate і передавати dict який має в собі інстанси вкладених моделей - ці моделі не будуть повторно створюватись і валіуватись, а залишаться як є 
-            - Увага. Лише за умови ConfigDict.revalidate_instances == 'never' (default)
-
-    Notes / Зауваги:
-        - If `recursive=False` and a dict (not BaseModel instance) accidentally lies in a field, Pydantic will process it as raw data and go deep for this field.
+    Notes:
         - If `ConfigDict.revalidate_instances != 'never'`, then even nested model instances will be revalidated.
-        - Якщо `recursive=False` у полі випадково лежить dict (а не інстанс BaseModel), Pydantic обробить його як сирі дані та піде в глибину для цього поля.
         - Якщо `ConfigDict.revalidate_instances != 'never'`, то навіть інстанси вкладених моделей будуть перевалідовані.
     """
 
+    # Full serialization
     if recursive:
-        # Full serialization 
-        data = model.model_dump(exclude_unset=True)
+        # Сериалізуємо все, pydantic все створить з нуля
+        data = model.model_dump(exclude_unset=False)  # Нехай дампить дефолтні значення. Інакше прийдеть обробляти else блок для однорідності логіки !todo 
         return data
+    
+    # Shallow serialization (Поверхнева).
     else:
-        # Shallow serialization 
-        # Take only actually loaded fields (or manually assigned via __setattr__)
-        # Беремо лише реально завантажені поля (або вручну присвоєні через __setattr__)
-        try:
-            loaded_fields = object.__getattribute__(model, '_loaded_fields')
-        except AttributeError:
-            logger.warning(
-                "ElasticModel: '_loaded_fields' is missing on %s; assuming empty set for non-recursive payload",
-                type(model).__name__,
-            )
-            loaded_fields = set()
-
-        model_data = object.__getattribute__(model, '__dict__')
-        data = {name: model_data[name] for name in loaded_fields if name in model_data}
+        # Всі вкладені інстанси залишаємо як є, pydantic їх теж залишить як є
+        model_dict = dict(object.__getattribute__(model, "__dict__"))  # Відомі моделі поля (Юзерські + Дефолт)
+        model_extra = getattr(model, "model_extra", None) or {} # Невідомі моделі юзерські поля
+        data = model_dict | model_extra 
+        
         return data
+
 
 # =========================
 #   Main Class 
 # =========================
+
 
 class ElasticModel(BaseModel):
     """
@@ -209,24 +180,24 @@ class ElasticModel(BaseModel):
     """
 
     model_config = ConfigDict(
-        extra='ignore',                 # Ignore extra keys at model level, but save them in ._extra for manual access. / Ігноруємо лишні ключі на рівні моделі, але зберігаємо їх в ._extra для ручного доступу.
+        extra='ignore',                 # Ignore extra keys at model level, but save them in .elastic_extra for manual access. / Ігноруємо лишні ключі на рівні моделі, але зберігаємо їх в .elastic_extra для ручного доступу.
         populate_by_name=True,          # Allows substituting data by both alias and field name
         revalidate_instances='never'    # Don't validate nested object if it's already a BaseModel instance / Не валідуємо вкладений об'єкт, якщо він вже є інстансом BaseModel
-
     )
 
     # Private state-carrying fields
-    _extra: dict[str, Any] = PrivateAttr(default_factory=dict)  # All unknown model fields are stored here (without validation)
-    _loaded_fields: set[str] = PrivateAttr(default_factory=set) # All loaded model fields are stored here
+    _elastic_finished: bool = PrivateAttr(default=False)
+    _elastic_extra: dict[str, Any] = PrivateAttr(default_factory=dict)  # All unknown model fields are stored here (without validation)
+    _elastic_loaded_fields: set[str] = PrivateAttr(default_factory=set) # All loaded model fields are stored here
 
 
     @classmethod
     def elastic_create(
         cls,
         data: dict[str, Any],
-        *,
         validate: bool = True,
-        apply_defaults: bool = False,
+        strict_validate: bool = False,
+        defaults: bool = False
     ) -> Self:
         """
         Build a partial class instance from a truncated dict.
@@ -242,72 +213,123 @@ class ElasticModel(BaseModel):
         :return Class instance with:
             - Only those fields set that are in `data` (And default values if `apply_defaults == True`)
 
-            - `.extra` - dictionary with all unknown keys at model level (without validation), 
+            - `.elastic_extra` - dictionary with all unknown keys at model level (without validation), 
             (If more fields are passed than described in the model, they will be in this dictionary);
 
-            - `._loaded_fields` - list (set) of fields that were actually set.
+            - `._elastic_loaded_fields` - list (set) of fields that were actually set.
+
+        :param strict_validate:
+            - Якщо True значення не буде коерсить pydantic'ом перед валідацією
 
         Note:
         - Class validators (`field_validator`/`model_validator`) are NOT run at this stage. Run them via `to_validated()` or regular `model_validate()`.
         """
-        fields = cls.model_fields
-        alias_to_name = {f.alias or n: n for n, f in fields.items()}    # Support alias: e.g., "_id" -> "id"
-        raw_ann = _raw_annotations_map(cls)
+        model_fields = cls.model_fields  # Всі поля задекларовані в моделі
+        raw_annotations = _raw_annotations_map(cls)
         
-        provided: dict[str, Any] = {}
-        extra: dict[str, Any] = {}
+        # Словник аліасів {"_id": "id"}
+        alias_to_name = {f.alias or n: n for n, f in model_fields.items()}  # Support alias: e.g., "_id" -> "id"
+        
+        elastic_data: dict[str, Any] = {}
+        elastic_extra: dict[str, Any] = {}
 
-        # Decompose input data into known/extra; coercion/validation of existing values.
-        for raw_key, value in data.items():
-            name = alias_to_name.get(raw_key, raw_key)
+        all_loaded_fields = []  # Всі поля які передав юзер, з врахуванням алісів
+        elastic_loaded_fields = set()  # Поля юзера які були збережні в модель, та не відсіяні через її налаштування (ConfigDict.extra)
+
+        # Чи зберігати невідомі моделі поля в elastic_extra
+        unknown_fields_to_elastic_extra = True  # !todo Надати можливість змінювати цей параметр
+
+        for raw_field_name, raw_field_value in data.items():
+            instance_field_name = alias_to_name.get(raw_field_name, raw_field_name)  # Правильна назва поля, з врахуванням аліасу
             
-            if name in fields:
-                annotation = raw_ann.get(name, fields[name].annotation)
-                provided[name] = cls._coerce(annotation, value, validate)
+            all_loaded_fields.append(instance_field_name)
+
+            if instance_field_name in model_fields:
+                annotation = raw_annotations.get(instance_field_name, model_fields[instance_field_name].annotation)
+                elastic_data[instance_field_name] = cls._elastic_coerce_value(annotation=annotation, value=raw_field_value, validate=validate, strict_validate=strict_validate)
             else:
-                extra[raw_key] = value  # "extra" — without validation
+                if unknown_fields_to_elastic_extra:
+                    # Додатоков зберігаємо в elastic_extra
+                    elastic_extra[raw_field_name] = raw_field_value
 
-        # Substitute defaults for missing fields (Optional)
-        if apply_defaults:
-            for name, f in fields.items():
-                if name in provided:
-                    continue
-                has_default = getattr(f, "default", PydanticUndefined) is not PydanticUndefined
-                has_factory = getattr(f, "default_factory", None) is not None
-                if has_default:
-                    provided[name] = getattr(f, "default")
-                elif has_factory:
-                    provided[name] = f.default_factory()  # type: ignore[attr-defined]
+                # Якщо поле невідоме - все рівно додаємо його до elastic_data,
+                # Делегуємо їх долю в .model_construct. Він сам вирішить в залежності від ConfigDict.extra
+                elastic_data[instance_field_name] = raw_field_value
 
-        # Create instance without requiring completeness (partial constructor).
-        inst = cls.model_construct(**provided)
+        # Створення моделі
+        instance: BaseModel = cls.model_construct(**elastic_data)
+        object.__setattr__(instance, "_elastic_finished", False)
+        
 
+        # pydantic опис методів:
+        # .model_extra - Невідомі моделі поля (зберігаються в окремому місці в залежності від `ConfigDict.extra`), до цих полів можна отримати доступ як і до всіх інших полів через instance.key
+        # .__dict__ - Відомі моделі заповнені поля (Юзерські + Дефолтні)
+        # .model_dump() - `.__dict__` + `.model_extra`. Відображає всі поля які доступні через "."
+        # .model_fields_set / __pydantic_fields_set__ - Відомі моделі поля які встановлені виключно юзером (без дефолтів, та без `.model_extra`). 
+        #   (Увага!. Масив не реагує на видалення полів (якщо юзер видалить поле, воно все ще залишиться тут), зате реагує на додавання полів)
+        # 
+
+        # elastic_model опис методів:
+        # .elastic_loaded_fields - Відомі та не відомі моделі юзерські поля (без дефолтів, + `.model_extra`, які прямо доступні через "."
+        #   - Завжди показує актуальне значення завантажених полів, (По суті комбінація `model_extra + .model_fields_set`, але навідміну від `.model_fields_set` точніше за рахунок видалення (актуальності) полів) 
+        #   - Якщо юзер видалить завантажене поле - воно також зникне з `.elastic_loaded_fields` (навідміну від `model_fields_set`), 
+
+        # .elastic_extra - невідомі моделі поля, завжди зберігаються незважаючи на `ConfigDict.extra`, 
+        #   - Дозволяє зберігати ці поля навіть при `ConfigDict.extra="ignore`,
+        #     (`ConfigDict.extra="ignore` дозволяє не засмічувати модель лишніми полями, як при `ConfigDict.extra="always`)
+        # .
+
+
+        # Проходимось по всім полям нової моделі
+        #   - Формуємо список `elastic_loaded_fields`
+        #   - Видаляємо заяйві поля (`defaults==False`)
+        instance_dump = instance.model_dump() # Всі поля прямо доступні через "." (Юзерскі+Дефолтні+Extra)
+        for instance_field_name, _ in instance_dump.items():
+            
+            # Юзерське поле. (логіка для прямих Юзерських + Extra полів)
+            if instance_field_name in all_loaded_fields:
+                elastic_loaded_fields.add(instance_field_name)  # `elastic_loaded_fields` збереже це завантажене юзером поле, яке прямо доступне через "."
+            
+            # Дефолтне поле (`.model_construct` встановив дефолти)
+            else:
+                # Юзер хоче видалити дефолтні поля, щоб не путати їх з реально завантаженими полями
+                if not defaults:
+                    # Видаляємо дефолтне поле з __dict__ 
+                    delattr(instance, instance_field_name)
+
+        
         # Save service information.
-        object.__setattr__(inst, "_extra", extra)
-        object.__setattr__(inst, "_loaded_fields", set(provided.keys()))
-        return inst
+        object.__setattr__(instance, "_elastic_extra", elastic_extra)
+        object.__setattr__(instance, "_elastic_loaded_fields", elastic_loaded_fields)
+        object.__setattr__(instance, "_elastic_finished", True)  # Ставимо мітку, що ми успішно звершили створення інстансу
+        return instance
 
     @property
     def elastic_extra(self) -> dict[str, Any]:
         """
-        All unknown model fields are stored here (without validation).
+        All unknown model fields are stored here .
         """
-        return self._extra
+        return self._elastic_extra
+    
+    @property
+    def elastic_loaded_fields(self) -> set[str]:
+        return self._elastic_loaded_fields
 
     def elastic_is_loaded(self, name: str) -> bool:
         """
         Checks whether the field was set during `elastic_create`.
         """
-        try:
-            loaded = object.__getattribute__(self, "_loaded_fields")
-        except AttributeError:
-            logger.warning(
-                "ElasticModel: '_loaded_fields' not initialized yet on %s while checking is_loaded('%s')",
-                type(self).__name__, name,
-            )
-            return False
-        
-        return name in loaded
+        return name in self.elastic_loaded_fields
+
+        # try:
+        #     loaded = object.__getattribute__(self, "_elastic_loaded_fields")
+        # except AttributeError:
+        #     logger.warning(
+        #         "ElasticModel: '_elastic_loaded_fields' not initialized yet on %s while checking is_loaded('%s')",
+        #         type(self).__name__, name,
+        #     )
+        #     return False
+        # return name in loaded
     
     def elastic_is_valid(self, recursive: bool = True) -> tuple[bool, list[str]]:
         """
@@ -346,7 +368,9 @@ class ElasticModel(BaseModel):
         (If you just want to know if this object is valid — use `is_valid()`)
         """
         payload = _build_validation_payload(model=self, recursive=recursive)
-        return self.__class__.model_validate(payload)
+        
+        # Вимикаємо вимагання аліасів, адже ми вже їх промапили в `.elastic_create`
+        return self.__class__.model_validate(payload, by_alias=False, by_name=True)
 
     def elastic_get_model_fields(self) -> Mapping[str, FieldInfo]:
         """
@@ -360,158 +384,162 @@ class ElasticModel(BaseModel):
     # Access/Assignment Behavior
     # ---------------------------
     
-    def __getattribute__(self, name: str) -> Any:
-        # Quick exits for service attributes and dunders
-        if name.startswith('_') or name in _SYSTEM_ATTRS:
-            return object.__getattribute__(self, name)
+    # def __getattribute__(self, name: str) -> Any:
+    #     # Quick exits for service attributes and dunders
+    #     if name.startswith('_') or name in _SYSTEM_ATTRS:
+    #         return object.__getattribute__(self, name)
 
-        # Call NotLoadedFieldError if key is not loaded
-        self._raise_if_not_loaded(model=self, name=name)
+    #     # Call NotLoadedFieldError if key is not loaded
+    #     self._raise_if_not_loaded(model=self, name=name)
 
-        # Normal access
-        return object.__getattribute__(self, name)
+    #     # Normal access
+    #     return object.__getattribute__(self, name)
 
-    def __getattr__(self, name: str) -> Any:
-        """
-        fallback, which is called if __getattribute__ raised AttributeError/field is not in __dict__.
-        fallback, який викликається, якщо __getattribute__ підняв AttributeError/поля немає у __dict__.
-        """
+    # def __getattr__(self, name: str) -> Any:
+    #     """
+    #     fallback, which is called if __getattribute__ raised AttributeError/field is not in __dict__.
+    #     fallback, який викликається, якщо __getattribute__ підняв AttributeError/поля немає у __dict__.
+    #     """
         
-        # Call NotLoadedFieldError if key is not loaded
-        self._raise_if_not_loaded(self, name)
+    #     # Call NotLoadedFieldError if key is not loaded
+    #     self._raise_if_not_loaded(self, name)
 
-        raise AttributeError(name)
+    #     raise AttributeError(name)
+
+
+    def __delattr__(self, name: str) -> None:
+        super().__delattr__(name)
+
+        # Актуалізовуємо `elastic_loaded_fields`, видаляємо юзерське поле
+        elastic_finished = object.__getattribute__(self, "_elastic_finished")
+        if elastic_finished:
+            elastic_loaded_fields: set = object.__getattribute__(self, "_elastic_loaded_fields")
+            if name in elastic_loaded_fields:
+                elastic_loaded_fields.discard(name)
 
     def __setattr__(self, name: str, value: Any) -> None:
-        """
-        Manual assignment of model field also marks it as "loaded".
-        Doesn't touch service/private attributes.
-        """
         super().__setattr__(name, value)
-        try:
-            model_fields = type(self).model_fields
-            if name in model_fields:
-                # if _loaded_fields is not yet initialized (during construction) — skip
-                # якщо _loaded_fields ще не ініціалізований (під час конструкції) — пропустимо
-                lf = object.__getattribute__(self, "_loaded_fields")
-                lf.add(name)
-        except AttributeError:
-            logger.warning(
-                "ElasticModel.__setattr__: '_loaded_fields' not ready on %s while setting '%s'",
-                type(self).__name__, name,
-            )
-            pass  # during early initialization of private attributes / під час ранньої ініціалізації приватних атрибутів
+
+        # Актуалізовуємо `elastic_loaded_fields`, вписуємо нове юзерське поле
+        elastic_finished = object.__getattribute__(self, "_elastic_finished")
+        if elastic_finished:
+            elastic_loaded_fields = object.__getattribute__(self, "_elastic_loaded_fields")
+            elastic_loaded_fields.add(name)
+        
     
     # ---------------------------
     # Internal validation/coercion
     # ---------------------------
 
     @classmethod
-    def _coerce(cls, annotation: Any, value: Any, validate: bool) -> Any:
+    def _elastic_prepare_value(cls, value: Any, annotation: Any, validate: bool) -> Any:
         """
-        Coercion/validation of `value` according to `annotation`.
+        Головна задача цієї функції це:
+        - `validate==True`: підготувати `value` до правильного коерсингу/валідації `pydantic`
+            - Шукаємо вкладені `ElasticModel` та конструюємо їх одразу, по логіці `.elastic_create`
+        - `validate==False`: отримати оброблений `value` який буде юзатися якщо при вимкнутій валідації, pydantic не буде обробляти цей `value` тому вся обробка на нас
+            - Шукаємо `ElasticModel` та конструюємо їх одразу, по логіці `.elastic_create`
+            - Шукаємо `BaseModel` та конструюємо їх одразу, інакше в нас буде dict
         """
-        raw = annotation                     # original annotation (with metadata/constraints) / оригінальна анотація (з метаданими/constraints)
-        base = _strip_annot(annotation)      # base type for structure analysis / базовий тип для аналізу структури
+        base = _strip_annot(annotation)     # EN: remove outer Annotated[...] wrapper; UA: знімаємо зовнішній Annotated[...]
         origin = get_origin(base)
 
-        # None
         if value is None:
-            return _adapter(raw).validate_python(None) if validate else None
+            return None
+
+        # --- Direct ElasticModel from dict ---
+        # EN: If field type is a subclass of ElasticModel and we got a dict, create a partial nested model.
+        # UA: Якщо тип поля — підклас ElasticModel і прийшов dict, створюємо часткову вкладену модель.
         
-        # Nested ElasticModel from dict
-        if _issubclass_safe(base, ElasticModel) and isinstance(value, dict):
-            return base.elastic_create(value, validate=validate)
-
-        # Union / Optional — delegate completely
-        if origin is Union:
-            return _adapter(raw).validate_python(value) if validate else value
-
-        # Containers (list/set/tuple): traverse elements recursively
-        if origin in (list, set, tuple):
-            args_base = get_args(base)  # structural arguments (may contain Annotated inside) / структурні аргументи (можуть містити Annotated всередині)
+        # !todo на кожному value викликається ця перевірка, можливо потрібно це робити якось оптимізованіше, перевірити що value це клас хочаб
+        if isinstance(value, dict):
             
-            # Tuple. Convert to positional types, check fixed length / Приводимо до позиційних типів, перевіряємо фіксовану довжину
-            if origin is tuple:
-                # Tuple[T, ...] — variadic
-                if len(args_base) == 2 and args_base[1] is Ellipsis:
-                    item_ann = args_base[0]
-                    out_tuple = tuple(cls._coerce(item_ann, x, validate) for x in value)
-
-                    if validate:    # run ready tuple through full validation by "raw"
-                        return _adapter(raw).validate_python(out_tuple)
-                    else:
-                        return out_tuple
-                
-                # Tuple[T1, T2, ...] — fixed length
+            if _issubclass_safe(base, ElasticModel):
+                return base.elastic_create(value, validate=validate)
+            
+            elif _issubclass_safe(base, BaseModel):
+                if validate:
+                    return value  # Коеристь та валідувати буде pydantic
                 else:
-                    spec = list(args_base)  # positional raw-annotations (with Annotated/constraints) / позиційні raw-анотації (з Annotated/constraints)
-                    expected = len(spec)
-
-                    # give to full validation to get correct ValidationError / віддаємо на повну валідацію, щоб отримати коректний ValidationError
-                    if validate and len(value) != expected:
-                        return _adapter(raw).validate_python(value)
+                    # Формуємо BaseModel модель через .model_construct, з підтримкою вкладеностей
+                    fields = base.model_fields
+                    alias_to_name = { (f.alias or n): n for n, f in fields.items() }
+                    raw_ann = _raw_annotations_map(base)
+                    basemodel_data = {}
                     
-                    # coerce head (by positional annotations) / коерсинг голови (за позиційними annotation'ами)
-                    head = [cls._coerce(t_ann, x, validate) for t_ann, x in zip(spec, value)]
-                    # leave tail as is (without coercion) / хвіст лишаємо як є (без коерсингу)
-                    tail = list(value[expected:]) if len(value) > expected else []
+                    for raw_key, v in value.items():
+                        name = alias_to_name.get(raw_key, raw_key)
+                        if name in fields:
+                            ann = raw_ann.get(name, fields[name].annotation)
+                            basemodel_data[name] = cls._elastic_prepare_value(value=v, annotation=ann, validate=validate)
+                        else:
+                            # зберігаємо всі невідомі поля, хай .model_construct сам розбирається що з ними робити
+                            basemodel_data[name] = v
                     
-                    out_tuple = tuple(head + tail)
-                    if validate:
-                        return _adapter(raw).validate_python(out_tuple)
-                    else:
-                        return out_tuple
+                    basemodel = base.model_construct(**basemodel_data)
+                    return basemodel
 
-            # List/Set
-            item_ann = args_base[0] if args_base else Any
-            items = (cls._coerce(item_ann, x, validate) for x in value)
+
+        # --- Union / Optional ---
+        if origin is Union:
+            # EN: Do NOT pre-convert for Union here (incl. Optional). Let Pydantic decide the branch (especially important for discriminated unions).
+            # UA: НЕ робимо попередніх перетворень для Union (у т.ч. Optional). Нехай Pydantic сам обере гілку (особливо важливо для дискримінованих Union).
+            return value
+
+        # --- list / set / tuple containers ---
+        if origin in (list, set, tuple):
+            args = get_args(base) or (Any,)
+
+            # EN: Variadic/Fixed tuple handling – recurse only into annotated positions.
+            # UA: Обробка кортежів (варіативних/фіксованих) – рекурсія лише в позиції, описані в анотації.
+            if origin is tuple:
+                # Variadic: Tuple[T, ...]
+                if len(args) == 2 and args[1] is Ellipsis:
+                    item_ann = args[0]
+                    # EN: map each item through pre-pass; UA: проганяємо кожен елемент через pre-pass
+                    return tuple(cls._elastic_prepare_value(x, item_ann, validate) for x in value)
+                # Fixed-length: Tuple[T1, T2, ...]
+                else:
+                    head_count = len(args)
+                    head = [
+                        cls._elastic_prepare_value(x, a, validate)
+                        for x, a in zip(value[:head_count], args)
+                    ]
+                    tail = list(value[head_count:])  # EN: keep tail as-is; UA: хвіст лишаємо як є
+                    return tuple(head + tail)
+
+            # EN: list/set – recurse into items using their item annotation (if present).
+            # UA: list/set – рекурсія по елементах за їх анотацією (якщо задана).
+            item_ann = args[0]
             if origin is list:
-                out_array = list(items)
-            else:
-                out_array = set(items)
-            
-            if validate:
-                return _adapter(raw).validate_python(out_array)
-            else:
-                return out_array
+                return [cls._elastic_prepare_value(value=x, annotation=item_ann, validate=validate) for x in value]
+            else:  # set
+                return {cls._elastic_prepare_value(value=x, annotation=item_ann, validate=validate) for x in value}
 
-        # Container: Dict[K, V]: keys (if needed) validated by TypeAdapter, values — recursively
+        # --- dict[K, V] container ---
         if origin is dict:
-            args_base = get_args(base)
-            key_ann, val_ann = (args_base if args_base else (Any, Any))
-            if validate:
-                return {_adapter(key_ann).validate_python(k): cls._coerce(val_ann, v, validate) for k, v in value.items()}
-            else:
-                # without key checking in validate=False mode
-                return {k: cls._coerce(val_ann, v, validate) for k, v in value.items()}
+            k_ann, v_ann = (get_args(base) or (Any, Any))
+            # EN: Only values may contain ElasticModel; keys stay untouched here.
+            # UA: Лише значення можуть містити ElasticModel; ключі не чіпаємо тут.
+            return {k: cls._elastic_prepare_value(value=v, annotation=v_ann, validate=validate) for k, v in value.items()}
 
-        # Everything else (int/str/EmailStr/Decimal/datetime/Enum/AnyUrl/...) — delegate to TypeAdapter
-        return _adapter(raw).validate_python(value) if validate else value
+        # No prep needed; return as-is for Pydantic to handle.
+        return value
+
 
     @classmethod
-    def _raise_if_not_loaded(cls, model: "ElasticModel", name: str) -> None:
+    def _elastic_coerce_value(cls, annotation: Any, value: Any, validate: bool, strict_validate: bool = False) -> Any:
         """
-        Single source of truth: if `name` is a model field but not in `_loaded_fields` - raise NotLoadedFieldError.
-        Єдине місце правди: якщо `name` є полем моделі, але не в `_loaded_fields` - піднімаємо NotLoadedFieldError.
+        - Якщо `validate == True`: Приведення `value` до його задекларованого типу та валідація через pydantic, 
+        - Якщо `validate == False`: Лише формуємо вкладені `ElasticModel` та `BaseModel` моделі 
         """
-        cls = object.__getattribute__(model, '__class__')
-        model_fields = cls.model_fields
-        if name not in model_fields:
-            return
-        
-        try:
-            loaded_fields = object.__getattribute__(model, '_loaded_fields')
-        except AttributeError:
-            # early initialization phase — just skip the check (test `test_discriminated_union_validate_true` - couldn't access nested fields of nested models)
-            # рання фаза ініціалізації — просто пропускаємо перевірку (тест `test_discriminated_union_validate_true` - не зміг звернутися до вкладених полів вкладених моделей)
-            logger.debug(
-                "ElasticModel: access to not-loaded field '%s' on model '%s'",
-                name, cls.__name__,
-            )
-            return
-        
-        if name in loaded_fields:
-            return
 
-        raise NotLoadedFieldError(f"Field '{name}' of model '{cls.__name__}' was not loaded.")
+        prepared_value = cls._elastic_prepare_value(value, annotation, validate)
+
+        if validate or strict_validate:
+            # Pydantic коерсинг та валідація
+            adapter = _adapter(annotation)
+            return adapter.validate_python(prepared_value, strict=strict_validate)
+        else:
+            # Повертаємо мінімально оброблену версію
+            return prepared_value

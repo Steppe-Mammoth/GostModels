@@ -1,21 +1,24 @@
+# -*- coding: utf-8 -*-
 # Cover / Покривають:
 # - partial-creation from projections / partial-створення з проєкцій
-# - strict access to unloaded fields (NotLoadedFieldError) / строгий доступ до незавантажених полів (NotLoadedFieldError)
+# - strict access to unloaded fields (AttributeError) / строгий доступ до незавантажених полів (AttributeError)
 # - recursion for nested models / рекурсію для вкладених моделей
 # - extra-fields / extra-поля
 # - alias
 # - shallow vs deep validation (is_valid / get_validated_model) / shallow vs deep валідацію (is_valid / get_validated_model)
 # - collections (list/set/tuple), dict-keys, Union (discriminated) / колекції (list/set/tuple), dict-ключі, Union (дискримінований)
 # - Annotated-constraints
-# - updating _loaded_fields on manual assignment (__setattr__) / оновлення _loaded_fields при ручному присвоєнні (__setattr__)
-
+# - updating _elastic_loaded_fields on assignment & deletion / оновлення _elastic_loaded_fields при присвоєнні та видаленні
 
 import pytest
-from typing import Annotated, Literal, Union
+#pytestmark = pytest.mark.filterwarnings("ignore:PydanticSerializationUnexpectedValue")
 
-from pydantic import EmailStr, Field, ValidationError
+from typing import Annotated, Dict, List, Literal, Tuple, Union
 
-from gostmodels import ElasticModel, NotLoadedFieldError
+from pydantic import EmailStr, Field, ValidationError, BaseModel, ConfigDict
+
+from gostmodels import ElasticModel
+
 
 # --------------------------
 # Models for tests
@@ -40,11 +43,12 @@ class User(ElasticModel):
     phone: str
     created: Created
     password: Password
-    # Default field: important to check strict access (should throw if not loaded)
+    # Default field: важливо перевірити поведінку за defaults=False
     flag: bool = False
 
-    # For user lists/arrays (to check paths like members[0].email)
+
 class UserSlim(ElasticModel):
+    # Для списків користувачів (перевірка шляхів типу members[0].email)
     email: EmailStr
     created: Created
 
@@ -85,13 +89,16 @@ class Bank(ElasticModel):
 
 class Payment(ElasticModel):
     method: Union[Card, Bank] = Field(..., discriminator="kind")
-    #method: Card
 
+
+# --------------------------
+# Основні тести ElasticModel
+# --------------------------
 
 def test_partial_creation_and_strict_access():
     """
     Часткове створення User з мінімального набору полів.
-    Доступ до відсутніх полів → NotLoadedFieldError (строгий доступ).
+    Доступ до відсутніх полів → AttributeError (строгий доступ).
     """
     doc = {
         "_id": "u1",
@@ -102,24 +109,24 @@ def test_partial_creation_and_strict_access():
         "phone": "+1",
         "email": "ann@example.com",
     }
-    u = User.elastic_create(doc, validate=True, apply_defaults=False)
+    u = User.elastic_create(doc, validate=True, defaults=False)
 
     # Завантажені поля читаються
     assert u.first_name == "Ann"
     assert u.created.at == "2025-08-15"
 
     # НЕЛОАДЕД вкладене поле → помилка
-    with pytest.raises(NotLoadedFieldError):
+    with pytest.raises(AttributeError):
         _ = u.created.by
 
-    # Дефолтне top-level поле, але без apply_defaults → теж помилка
-    with pytest.raises(NotLoadedFieldError):
+    # Дефолтне top-level поле, але за defaults=False → помилка
+    with pytest.raises(AttributeError):
         _ = u.flag
 
 
-def test_extra_fields_collected_in_extra():
+def test_extra_fields_collected_in_elastic_extra():
     """
-    Невідомі ключі мають складатися у .extra без валідації.
+    Невідомі ключі мають складатися у .elastic_extra без валідації (навіть коли extra='ignore').
     """
     doc = {
         "_id": "u1",
@@ -131,9 +138,9 @@ def test_extra_fields_collected_in_extra():
         "email": "ann@example.com",
         "debug_flag": 1,  # зайве поле
     }
-    u = User.elastic_create(doc)
+    u = User.elastic_create(doc, validate=False)
     assert u.elastic_extra["debug_flag"] == 1
-    # .extra не впливає на схему
+    # .elastic_extra не впливає на схему
     model_fields = u.elastic_get_model_fields()
     assert "debug_flag" not in model_fields
 
@@ -154,9 +161,9 @@ def test_alias_support_for_id():
     assert u.id == "x-1"
 
 
-def test_apply_defaults_top_level():
+def test_defaults_true_keeps_defaults_but_not_loaded():
     """
-    apply_defaults=True → підставити дефолти top-level полів і помітити їх як loaded.
+    defaults=True → підставити дефолти top-level полів і перевірити що elastic_is_loaded(default_field) == False.
     """
     doc = {
         "_id": "u1",
@@ -167,10 +174,10 @@ def test_apply_defaults_top_level():
         "created": {"at": "t", "by": "sys"},
         "password": {"hash": "h", "salt": "s"},
     }
-    u = User.elastic_create(doc, apply_defaults=True)
+    u = User.elastic_create(doc, defaults=True, validate=False)
     assert u.flag is False
-    # is_loaded має сказати, що цей дефолт тепер «завантажений»
-    assert u.elastic_is_loaded("flag") is True
+    # дефолт не вважається "loaded"
+    assert u.elastic_is_loaded("flag") is False
 
 
 def test_nested_model_partial_and_strict_access():
@@ -188,7 +195,7 @@ def test_nested_model_partial_and_strict_access():
     })
 
     # Доступ до created.by → помилка
-    with pytest.raises(NotLoadedFieldError):
+    with pytest.raises(AttributeError):
         _ = u.created.by
 
 
@@ -204,11 +211,9 @@ def test_is_valid_shallow_vs_deep_paths():
 
     ok_deep, bad_deep = u.elastic_is_valid(recursive=True)
     assert ok_deep is False
-    # 'created.by' має бути серед шляхів помилок
-    assert any(p == "created.by" for p in bad_deep)
+    assert "created.by" in bad_deep
 
     ok_shallow, bad_shallow = u.elastic_is_valid(recursive=False)
-    # shallow не перевіряє вкладені інстанси → має не падати по created.by
     assert ok_shallow is True
     assert all(p != "created.by" for p in bad_shallow)
 
@@ -272,9 +277,9 @@ def test_list_and_set_coercion():
     }, validate=False)
 
     assert c_false.nums_list == ["1", 2, "3"]
-    assert c_false.nums_set == {"1", 2, "3"}  # тип множини зберігається, але елементи не коерсяться
+    assert c_false.nums_set == {"1", 2, "3"}
     assert c_false.pair_fixed == (1, "x")
-    assert c_false.any_tail == ("4", "5", 6)  # для Tuple[T, ...] при validate=False елементи не коерсяться
+    assert c_false.any_tail == ("4", "5", 6)
 
 
 def test_tuple_fixed_validate_true_and_false_no_truncation():
@@ -283,7 +288,6 @@ def test_tuple_fixed_validate_true_and_false_no_truncation():
     - validate=True і невірна довжина → делегуємо у Pydantic (ValidationError)
     - validate=False і довша послідовність → коерсимо тільки відомі позиції, хвіст не обрізаємо
     """
-    # validate=True: зайвий елемент → має впасти
     with pytest.raises(ValidationError):
         _ = Containers.elastic_create({
             "nums_list": [],
@@ -292,7 +296,6 @@ def test_tuple_fixed_validate_true_and_false_no_truncation():
             "any_tail": [],
         }, validate=True)
 
-    # validate=False: не обрізаємо хвіст; перші 2 елементи коерсяться
     c = Containers.elastic_create({
         "nums_list": [],
         "nums_set": set(),
@@ -300,12 +303,7 @@ def test_tuple_fixed_validate_true_and_false_no_truncation():
         "any_tail": [],
     }, validate=False)
 
-    assert c.pair_fixed == ( "1", "x", 99 )
-    # ВАЖЛИВО: згідно з твоєю реалізацією для validate=False
-    #   - перші позиції коерсяться за схемою (int -> тут validate=False, тож елемент залишився як є: "1")
-    #   - хвіст не коерситься і не обрізається (залишився 99):
-    # Якщо ти змінюватимеш політику коерсингу для validate=False (наприклад, "tail-type"),
-    # цей тест треба буде оновити.
+    assert c.pair_fixed == ("1", "x", 99)
 
 
 def test_discriminated_union_validate_true():
@@ -318,13 +316,11 @@ def test_discriminated_union_validate_true():
 
     assert isinstance(p.method, Card)
     assert p.method.pan == "1234"
-    
 
 
 def test_discriminated_union_validate_false_keeps_raw():
     """
-    Union із дискримінатором: validate=False → лишається «як є» (dict),
-    бо для Union гілка у _coerce повертає value без змін.
+    Union із дискримінатором: validate=False → лишається «як є» (dict).
     """
     p = Payment.elastic_create({
         "method": {"kind": "bank", "iban": "UA..."}
@@ -338,40 +334,43 @@ def test_discriminated_union_validate_false_keeps_raw():
 def test_annotated_constraints_preserved():
     """
     Annotated[str, Field(min_length=3)]:
-    - validate=True → має врахувати constraint (мін. довжина) і впасти для "ab".
+    - validate=True → має врахувати constraint (мін. довжина) і впасти для "ac".
     - validate=False → пропускаємо як є.
     """
-    # validate=True → ValidationError
     with pytest.raises(ValidationError):
-        result = WithAnnotated.elastic_create({"short": "ac"}, validate=True)
+        _ = WithAnnotated.elastic_create({"short": "ac"}, validate=True)
 
-
-    # validate=False → "ab" приймається як є
     m = WithAnnotated.elastic_create({"short": "ab"}, validate=False)
     assert m.short == "ab"
 
 
-def test_manual_assignment_marks_loaded_and_allows_access():
+def test_manual_assignment_updates_loaded_and_deletion_removes_from_loaded():
     """
-    __setattr__ має позначати поле як «завантажене», аби строгий доступ дозволив читання.
+    __setattr__ має позначати поле як «завантажене», а delattr — прибирати з loaded.
     """
-    # Створюємо частково, без email
     u = UserSlim.elastic_create({
         "created": {"at": "t", "by": "sys"}
-    })
+    }, validate=False, defaults=False)
 
-    with pytest.raises(NotLoadedFieldError):
+    assert u.elastic_is_loaded("email") is False
+    with pytest.raises(AttributeError):
         _ = u.email
 
-    # Ручне присвоєння → має стати «loaded»
+    # Присвоєння → loaded
     u.email = "x@y.z"
     assert u.elastic_is_loaded("email") is True
     assert u.email == "x@y.z"
 
+    # Видалення → не loaded
+    del u.email
+    assert u.elastic_is_loaded("email") is False
+    with pytest.raises(AttributeError):
+        _ = u.email
+
 
 def test_group_members_paths_in_deep_validation():
     """
-    Перевірка форматування шляхів у масивах: members[0].email.
+    Перевірка форматування шляхів у масивах: members[1].created.by.
     """
     g = Group.elastic_create({
         "name": "admins",
@@ -379,10 +378,10 @@ def test_group_members_paths_in_deep_validation():
             {"email": "ok@ex.com", "created": {"at": "t", "by": "sys"}},
             {"email": "bad@ex.com", "created": {"at": "t"}},   # немає 'by'
         ]
-    })
+    }, validate=False)
 
     ok_shallow, bad_shallow = g.elastic_is_valid(recursive=False)
-    assert ok_shallow is True  # shallow не лізе у вкладених інстансах
+    assert ok_shallow is True
 
     ok_deep, bad_deep = g.elastic_is_valid(recursive=True)
     assert ok_deep is False
@@ -392,22 +391,20 @@ def test_group_members_paths_in_deep_validation():
 # --------------------------
 # Порівняння з pydantic.BaseModel
 # --------------------------
-from pydantic import BaseModel as PydBaseModel, ConfigDict as PydConfigDict
 
-
-class PydCreated(PydBaseModel):
+class PydCreated(BaseModel):
     at: str
     by: str
 
 
-class PydUserSlim(PydBaseModel):
-    model_config = PydConfigDict(populate_by_name=True)
+class PydUserSlim(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
     email: EmailStr
     created: PydCreated
 
 
-class PydUserBase(PydBaseModel):
-    model_config = PydConfigDict(populate_by_name=True, extra='ignore')
+class PydUserBase(BaseModel):
+    model_config = ConfigDict(populate_by_name=True, extra='ignore')
     id: str = Field(alias="_id")
     email: EmailStr
 
@@ -419,13 +416,11 @@ def test_basemodel_partial_creation_vs_elasticmodel():
     """
     partial_doc = {"email": "a@b.com", "created": {"at": "t"}}  # без created.by
 
-    # BaseModel — не вміє частково, очікує всі required-поля
     with pytest.raises(ValidationError):
         _ = PydUserSlim.model_validate(partial_doc)
 
-    # ElasticModel — допускає частковість
-    u = UserSlim.elastic_create(partial_doc)
-    ok_shallow, bad_shallow = u.elastic_is_valid(recursive=False)
+    u = UserSlim.elastic_create(partial_doc, validate=False)
+    ok_shallow, _ = u.elastic_is_valid(recursive=False)
     assert ok_shallow is True
     ok_deep, bad_deep = u.elastic_is_valid(recursive=True)
     assert ok_deep is False and "created.by" in bad_deep
@@ -434,7 +429,7 @@ def test_basemodel_partial_creation_vs_elasticmodel():
 def test_basemodel_extra_ignored_vs_elasticmodel_extra_captured():
     """
     BaseModel за замовчуванням ігнорує extra (extra='ignore'), але їх не зберігає.
-    ElasticModel зберігає extra у .extra без валідації.
+    ElasticModel зберігає extra у .elastic_extra без валідації.
     """
     doc = {
         "_id": "u1",
@@ -449,7 +444,7 @@ def test_basemodel_extra_ignored_vs_elasticmodel_extra_captured():
         id: str = Field(alias="_id")
         email: EmailStr
 
-    eu = EMUser.elastic_create(doc)
+    eu = EMUser.elastic_create(doc, validate=False)
     assert eu.elastic_extra["debug_flag"] == 1
 
 
@@ -460,13 +455,65 @@ def test_basemodel_deep_validation_always_vs_elasticmodel_shallow():
     """
     partial_doc = {"email": "a@b.com", "created": {"at": "t"}}  # без created.by
 
-    # BaseModel — обов'язково впаде
     with pytest.raises(ValidationError):
         _ = PydUserSlim.model_validate(partial_doc)
 
-    # ElasticModel — shallow проходить, deep падає
-    u = UserSlim.elastic_create(partial_doc)
+    u = UserSlim.elastic_create(partial_doc, validate=False)
     u_shallow = u.elastic_get_validated_model(recursive=False)
     assert isinstance(u_shallow, UserSlim)
     with pytest.raises(ValidationError):
         _ = u.elastic_get_validated_model(recursive=True)
+
+
+# --------------------------
+# Додаткові нові тести
+# --------------------------
+
+def test_elastic_loaded_fields_with_extra_allow_and_deletion():
+    """
+    extra='allow': unknowns доступні через ".", тому з'являються в elastic_loaded_fields;
+    після delattr — зникають і з моделі, і з elastic_loaded_fields.
+    """
+    class UAllow(ElasticModel):
+        model_config = ConfigDict(extra='allow')
+        a: int
+
+    u = UAllow.elastic_create({"a": 1, "debug": 42}, validate=False)
+    # доступний як атрибут і в loaded
+    assert getattr(u, "debug") == 42
+    assert "debug" in u.elastic_loaded_fields
+
+    del u.debug
+    assert not hasattr(u, "debug")
+    assert "debug" not in u.elastic_loaded_fields
+
+
+def test_elastic_extra_always_captures_unknowns_even_with_extra_ignore_and_allow():
+    """
+    .elastic_extra зберігає unknowns незалежно від налаштування extra.
+    """
+    class UIgnore(ElasticModel):
+        model_config = ConfigDict(extra='ignore')
+        a: int
+
+    class UAllow(ElasticModel):
+        model_config = ConfigDict(extra='allow')
+        a: int
+
+    ui = UIgnore.elastic_create({"a": 1, "u": 2}, validate=False)
+    ua = UAllow.elastic_create({"a": 1, "u": 2}, validate=False)
+
+    assert ui.elastic_extra["u"] == 2
+    assert ua.elastic_extra["u"] == 2
+
+
+def test_strict_validate_blocks_coercion():
+    """
+    strict_validate=True → без коерсингу, отже рядок у полі int має впасти.
+    """
+    class OnlyInt(ElasticModel):
+        x: int
+
+    with pytest.raises(ValidationError):
+        _ = OnlyInt.elastic_create({"x": "1"}, validate=True, strict_validate=True)
+#
