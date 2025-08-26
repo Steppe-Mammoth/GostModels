@@ -522,6 +522,9 @@ class ElasticModel(BaseModel):
             # UA: Лише значення можуть містити ElasticModel; ключі не чіпаємо тут.
             return {k: cls._elastic_prepare_value(value=v, annotation=v_ann, validate=validate) for k, v in value.items()}
 
+        if base in (int, str):
+            pass
+
         # No prep needed; return as-is for Pydantic to handle.
         return value
 
