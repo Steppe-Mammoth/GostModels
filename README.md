@@ -50,6 +50,9 @@ https://pypi.org/project/gostmodels/
 ---
 
 ## Quick start
+**💡 `ElasticModel.elastic_create` validation modes**
+> - **`validate=True`** - All values are coerced to their declared types and validated by Pydantic. The only exception is nested `ElasticModel`, which are built with support for "partial data".
+> - **`validate=False`** - No coercion or validation is applied — values are kept *as-is*. The only exceptions is nested `BaseModel` and `ElasticModel`, which are built with support for "partial data".
 
 ```python
 from typing import Annotated
