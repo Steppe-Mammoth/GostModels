@@ -481,8 +481,8 @@ class ElasticModel(BaseModel):
 
         # --- Union / Optional ---
         if origin is Union:
-            # EN: Do NOT pre-convert for Union here (incl. Optional). Let Pydantic decide the branch (especially important for discriminated unions).
-            # UA: НЕ робимо попередніх перетворень для Union (у т.ч. Optional). Нехай Pydantic сам обере гілку (особливо важливо для дискримінованих Union).
+            # Не робимо перетворень для Union (у т.ч. Optional, BaseModel, ElasticModel). Pydantic сам обере гілку (особливо важливо для дискримінованих Union).
+            # !todo Union[BaseModel, BaseModel] (discriminator) не будуть мапиться якщо validate==False, замість них ми отримаємо dict
             return value
 
         # --- list / set / tuple containers ---
