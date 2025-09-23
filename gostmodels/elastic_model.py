@@ -328,16 +328,6 @@ class ElasticModel(BaseModel):
         Checks whether the field was set during `elastic_create`.
         """
         return name in self.elastic_loaded_fields
-
-        # try:
-        #     loaded = object.__getattribute__(self, "_elastic_loaded_fields")
-        # except AttributeError:
-        #     logger.warning(
-        #         "ElasticModel: '_elastic_loaded_fields' not initialized yet on %s while checking is_loaded('%s')",
-        #         type(self).__name__, name,
-        #     )
-        #     return False
-        # return name in loaded
     
     def elastic_is_valid(self, recursive: bool = True) -> tuple[bool, list[str]]:
         """
