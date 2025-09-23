@@ -307,9 +307,9 @@ class ElasticModel(BaseModel):
 
         
         # Save service information.
-        object.__setattr__(instance, "_elastic_extra", elastic_extra)
-        object.__setattr__(instance, "_elastic_loaded_fields", elastic_loaded_fields)
-        object.__setattr__(instance, "_elastic_finished", True)  # Ставимо мітку, що ми успішно звершили створення інстансу
+        setattr(instance, "_elastic_extra", elastic_extra)
+        setattr(instance, "_elastic_loaded_fields", elastic_loaded_fields)
+        setattr(instance, "_elastic_finished", True)  # Ставимо мітку, що ми успішно звершили створення інстансу
         return instance
 
     @property
@@ -391,9 +391,9 @@ class ElasticModel(BaseModel):
         super().__delattr__(name)
 
         # Актуалізовуємо `elastic_loaded_fields`, видаляємо юзерське поле
-        elastic_finished = object.__getattribute__(self, "_elastic_finished")
+        elastic_finished = self._elastic_finished
         if elastic_finished:
-            elastic_loaded_fields: set = object.__getattribute__(self, "_elastic_loaded_fields")
+            elastic_loaded_fields = self._elastic_loaded_fields
             if name in elastic_loaded_fields:
                 elastic_loaded_fields.discard(name)
 
@@ -401,9 +401,9 @@ class ElasticModel(BaseModel):
         super().__setattr__(name, value)
 
         # Актуалізовуємо `elastic_loaded_fields`, вписуємо нове юзерське поле
-        elastic_finished = object.__getattribute__(self, "_elastic_finished")
+        elastic_finished = self._elastic_finished
         if elastic_finished:
-            elastic_loaded_fields = object.__getattribute__(self, "_elastic_loaded_fields")
+            elastic_loaded_fields = self._elastic_loaded_fields
             elastic_loaded_fields.add(name)
         
     
