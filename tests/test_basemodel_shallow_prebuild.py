@@ -2,7 +2,6 @@
 # EN: Tests for shallow prebuild of nested pydantic.BaseModel when validate=False.
 # UA: Тести shallow-побудови вкладених pydantic.BaseModel при validate=False.
 
-import pytest
 # pytestmark = pytest.mark.filterwarnings("ignore:PydanticSerializationUnexpectedValue")
 
 from typing import Dict, List, Literal, Tuple, Union
