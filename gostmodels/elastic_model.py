@@ -285,25 +285,24 @@ class ElasticModel(BaseModel):
                 elastic_data[model_field_name] = data_field_value
 
         # Створення моделі
-        instance: BaseModel = cls.model_construct(**elastic_data)
-        object.__setattr__(instance, "_elastic_finished", False)
+        instance: ElasticModel = cls.model_construct(**elastic_data)
 
         # Проходимось по всім полям нової моделі
         #   - Формуємо список `elastic_loaded_fields`
         #   - Видаляємо заяйві поля (`defaults==False`)
         instance_dump = instance.model_dump() # Всі поля прямо доступні через "." (Юзерскі+Дефолтні+Extra)
-        for instance_field_name, _ in instance_dump.items():
+        for model_field_name, _ in instance_dump.items():
             
             # Юзерське поле. (логіка для прямих Юзерських + Extra полів)
-            if instance_field_name in all_loaded_fields:
-                elastic_loaded_fields.add(instance_field_name)  # `elastic_loaded_fields` збереже це завантажене юзером поле, яке прямо доступне через "."
+            if model_field_name in all_loaded_fields:
+                elastic_loaded_fields.add(model_field_name)  # `elastic_loaded_fields` збереже це завантажене юзером поле, яке прямо доступне через "."
             
             # Дефолтне поле (`.model_construct` встановив дефолти)
             else:
                 # Юзер хоче видалити дефолтні поля, щоб не путати їх з реально завантаженими полями
                 if not defaults:
                     # Видаляємо дефолтне поле з __dict__ 
-                    delattr(instance, instance_field_name)
+                    delattr(instance, model_field_name)
 
         
         # Save service information.
