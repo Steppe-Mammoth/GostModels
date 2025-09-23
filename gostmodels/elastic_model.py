@@ -198,11 +198,11 @@ class ElasticModel(BaseModel):
     - For "full" validation and running class validators, use to_validated().
     """
 
-    model_config = ConfigDict(
-        extra='ignore',                 # Ignore extra keys at model level, but save them in .elastic_extra for manual access. / Ігноруємо лишні ключі на рівні моделі, але зберігаємо їх в .elastic_extra для ручного доступу.
-        populate_by_name=True,          # Allows substituting data by both alias and field name
-        revalidate_instances='never'    # Don't validate nested object if it's already a BaseModel instance / Не валідуємо вкладений об'єкт, якщо він вже є інстансом BaseModel
-    )
+    # model_config = ConfigDict(
+    #     extra='ignore',                 # Ignore extra keys at model level, but save them in .elastic_extra for manual access. / Ігноруємо лишні ключі на рівні моделі, але зберігаємо їх в .elastic_extra для ручного доступу.
+    #     populate_by_name=True,          # Allows substituting data by both alias and field name
+    #     revalidate_instances='never'    # Don't validate nested object if it's already a BaseModel instance / Не валідуємо вкладений об'єкт, якщо він вже є інстансом BaseModel
+    # )
 
     # Private state-carrying fields
     _elastic_finished: bool = PrivateAttr(default=False)
