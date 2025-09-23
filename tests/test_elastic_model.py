@@ -13,9 +13,9 @@
 import pytest
 #pytestmark = pytest.mark.filterwarnings("ignore:PydanticSerializationUnexpectedValue")
 
-from typing import Annotated, Dict, List, Literal, Tuple, Union
+from typing import Annotated, Any, Dict, List, Literal, Tuple, Union
 
-from pydantic import EmailStr, Field, ValidationError, BaseModel, ConfigDict
+from pydantic import EmailStr, Field, PrivateAttr, ValidationError, BaseModel, ConfigDict
 
 from gostmodels import ElasticModel
 
@@ -35,6 +35,8 @@ class Password(ElasticModel):
 
 
 class User(ElasticModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     id: str = Field(alias="_id")
     first_name: str
     last_name: str
@@ -141,7 +143,7 @@ def test_extra_fields_collected_in_elastic_extra():
     u = User.elastic_create(doc, validate=False)
     assert u.elastic_extra["debug_flag"] == 1
     # .elastic_extra не впливає на схему
-    model_fields = u.elastic_get_model_fields()
+    model_fields = u._elastic_get_model_fields()
     assert "debug_flag" not in model_fields
 
 
@@ -517,3 +519,34 @@ def test_strict_validate_blocks_coercion():
     with pytest.raises(ValidationError):
         _ = OnlyInt.elastic_create({"x": "1"}, validate=True, strict_validate=True)
 #
+
+def test_attributes():
+    class EM(ElasticModel):
+        _id: Any = PrivateAttr(default=None)
+        x: int
+
+    class BM(BaseModel):
+        _id: Any = PrivateAttr(default=None)
+        x: int
+
+    em_1 = EM.elastic_create({})
+    em_1.x = 22
+    assert em_1.x == 22
+    assert em_1._id == None
+    em_1._id = 11
+    assert em_1._id == 11
+
+    em_2 = EM(x=22)
+    assert em_2.x == 22
+    assert em_2._id == None
+    em_2._id = 11
+    assert em_2._id == 11
+
+    bm_2 = BM(x=22)
+    assert bm_2.x == 22
+    assert bm_2._id == None
+    bm_2._id = 11
+    assert bm_2._id == 11
+
+
+    
