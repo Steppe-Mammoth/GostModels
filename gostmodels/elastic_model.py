@@ -247,8 +247,17 @@ class ElasticModel(BaseModel):
         raw_annotations = _raw_annotations_map(cls)
         
         # Словник аліасів {"_id": "id"}
-        alias_to_name = {f.alias or n: n for n, f in model_fields.items()}  # Support alias: e.g., "_id" -> "id"
-        
+        alias_to_name = {f.alias or n: n for n, f in model_fields.items()}
+        alias_is_allowed = cls.model_config.get('populate_by_name', False)
+        def get_model_name_from_data_name(data_name: str) -> str:
+            """
+            Поверне назву поля моделі до якого відноситься data_name, звірить по аліасам моделі
+            - Якщо не відноситься - поверне data_name 
+            """
+            if alias_is_allowed:
+                return alias_to_name.get(data_name, data_name)
+            return data_name
+
         elastic_data: dict[str, Any] = {}
         elastic_extra: dict[str, Any] = {}
 
@@ -258,22 +267,22 @@ class ElasticModel(BaseModel):
         # Чи зберігати невідомі моделі поля в elastic_extra
         unknown_fields_to_elastic_extra = True  # !todo Надати можливість змінювати цей параметр
 
-        for raw_field_name, raw_field_value in data.items():
-            instance_field_name = alias_to_name.get(raw_field_name, raw_field_name)  # Правильна назва поля, з врахуванням аліасу
+        for data_field_name, data_field_value in data.items():
+            model_field_name = get_model_name_from_data_name(data_field_name)  # Правильна назва поля, з врахуванням аліасу.
             
-            all_loaded_fields.append(instance_field_name)
+            all_loaded_fields.append(model_field_name)
 
-            if instance_field_name in model_fields:
-                annotation = raw_annotations.get(instance_field_name, model_fields[instance_field_name].annotation)
-                elastic_data[instance_field_name] = cls._elastic_coerce_value(annotation=annotation, value=raw_field_value, validate=validate, strict_validate=strict_validate)
+            if model_field_name in model_fields:
+                annotation = raw_annotations.get(model_field_name, model_fields[model_field_name].annotation)
+                elastic_data[model_field_name] = cls._elastic_coerce_value(annotation=annotation, value=data_field_value, validate=validate, strict_validate=strict_validate)
             else:
                 if unknown_fields_to_elastic_extra:
                     # Додатоков зберігаємо в elastic_extra
-                    elastic_extra[raw_field_name] = raw_field_value
+                    elastic_extra[model_field_name] = data_field_value
 
                 # Якщо поле невідоме - все рівно додаємо його до elastic_data,
                 # Делегуємо їх долю в .model_construct. Він сам вирішить в залежності від ConfigDict.extra
-                elastic_data[instance_field_name] = raw_field_value
+                elastic_data[model_field_name] = data_field_value
 
         # Створення моделі
         instance: BaseModel = cls.model_construct(**elastic_data)
