@@ -380,11 +380,16 @@ class ElasticModel(BaseModel):
         # Вимикаємо вимагання аліасів, адже ми вже їх промапили в `.elastic_create`
         return self.__class__.model_validate(payload, by_alias=False, by_name=True)
 
-    def elastic_get_model_fields(self) -> Mapping[str, FieldInfo]:
+    def _elastic_get_model_fields(self) -> Mapping[str, FieldInfo]:
         """
-        (ChatGPT advises not to call this in system methods, possible crash accessing nested model fields, but this seems to be false)
-        (ЧатГПТ радить не викликати це в системних методах, можливий збій доступа до полів вкладених моделей, але схоже це брехня)
+        Повертає поля моделі та мета-дані (`FieldInfo`) про них, для екземпляру класу, адже напряму отримати їх можна тільки через властивості класу, а не екземпляра
+        ```
+        {'field_name': FieldInfo(annotation=int, required=True)}
+        ```
         """
+        # (ChatGPT advises not to call this in system methods, possible crash accessing nested model fields, but this seems to be false)
+        # (ЧатГПТ радить не викликати це в системних методах, можливий збій доступа до полів вкладених моделей, але схоже це брехня)
+        
         cls = object.__getattribute__(self, '__class__')
         return cls.model_fields
 
