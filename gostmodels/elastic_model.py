@@ -225,12 +225,12 @@ class ElasticModel(BaseModel):
         :param validate: 
             - If True (default) - all values from `data` will be validated and converted according to their type annotations in the model.
             - If False - values are accepted "as is" (only for trusted flows).
-        :param apply_defaults:
+        :param defaults:
             - If True - `default`/`default_factory` are substituted for missing fields.
             - If False - missing fields are not created; accessing them will throw `NotLoadedFieldError`.
         
         :return Class instance with:
-            - Only those fields set that are in `data` (And default values if `apply_defaults == True`)
+            - Only those fields set that are in `data` (And default values if `defaults == True`)
 
             - `.elastic_extra` - dictionary with all unknown keys at model level (without validation), 
             (If more fields are passed than described in the model, they will be in this dictionary);
