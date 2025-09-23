@@ -396,29 +396,6 @@ class ElasticModel(BaseModel):
     # ---------------------------
     # Access/Assignment Behavior
     # ---------------------------
-    
-    # def __getattribute__(self, name: str) -> Any:
-    #     # Quick exits for service attributes and dunders
-    #     if name.startswith('_') or name in _SYSTEM_ATTRS:
-    #         return object.__getattribute__(self, name)
-
-    #     # Call NotLoadedFieldError if key is not loaded
-    #     self._raise_if_not_loaded(model=self, name=name)
-
-    #     # Normal access
-    #     return object.__getattribute__(self, name)
-
-    # def __getattr__(self, name: str) -> Any:
-    #     """
-    #     fallback, which is called if __getattribute__ raised AttributeError/field is not in __dict__.
-    #     fallback, який викликається, якщо __getattribute__ підняв AttributeError/поля немає у __dict__.
-    #     """
-        
-    #     # Call NotLoadedFieldError if key is not loaded
-    #     self._raise_if_not_loaded(self, name)
-
-    #     raise AttributeError(name)
-
 
     def __delattr__(self, name: str) -> None:
         super().__delattr__(name)
